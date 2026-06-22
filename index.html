@@ -404,27 +404,75 @@ const IA=[];
 const FB_KEY   = "AIzaSyDJ6MvSbvDkydvmIXdIlxVCVBTODN7frHc";
 const FB_URL   = "https://firestore.googleapis.com/v1/projects/oic-optical-staff/databases/(default)/documents/appdata/main?key=" + FB_KEY;
 // Load: general data + appointments + per-user daily records (isolated fields)
-const fbLoad = () => fetch(FB_URL).then(r=>r.json()).then(doc=>{
-  if(!doc.fields) return {data:null,appts:[],daily:{},collBills:{}};
-  const data  = doc.fields.data  ? JSON.parse(doc.fields.data.stringValue)  : null;
-  const appts = doc.fields.appts ? JSON.parse(doc.fields.appts.stringValue) : [];
-  const collBills = doc.fields.collBills ? JSON.parse(doc.fields.collBills.stringValue) : {};
-  const daily = {};
-  Object.keys(doc.fields).forEach(k=>{
-    if(k.startsWith('daily_')){try{daily[+k.slice(6)]=JSON.parse(doc.fields[k].stringValue);}catch(e){}}
-  });
-  // Migration: also read legacy data.daily as fallback
-  if(data&&data.daily){
-    Object.keys(data.daily).forEach(uid=>{
-      if(!daily[+uid])daily[+uid]=data.daily[uid];
+const fbLoad = () => {
+  console.log('[OIC] 🔄 Firebase load started...');
+  return fetch(FB_URL)
+    .then(r=>{
+      console.log('[OIC] Firebase HTTP status:', r.status);
+      return r.json();
+    })
+    .then(doc=>{
+      if(!doc.fields){
+        console.warn('[OIC] ⚠️ No fields in Firebase response — new document?');
+        return {data:null,appts:[],daily:{},collBills:{},hvUnits:{},attendance:{},teamwork:{},growth:{}};
+      }
+      console.log('[OIC] Firebase fields found:', Object.keys(doc.fields).join(', '));
+
+      let data=null, appts=[], collBills={}, hvUnits={}, attendance={}, teamwork={}, growth={};
+      const daily={};
+
+      try{ data = doc.fields.data ? JSON.parse(doc.fields.data.stringValue) : null; }
+      catch(e){ console.error('[OIC] ❌ Parse error — data:', e.message); }
+
+      try{ appts = doc.fields.appts ? JSON.parse(doc.fields.appts.stringValue) : []; }
+      catch(e){ console.error('[OIC] ❌ Parse error — appts:', e.message); appts=[]; }
+
+      try{ collBills = doc.fields.collBills ? JSON.parse(doc.fields.collBills.stringValue) : {}; }
+      catch(e){ console.error('[OIC] ❌ Parse error — collBills:', e.message); collBills={}; }
+
+      try{ hvUnits = doc.fields.hvUnits ? JSON.parse(doc.fields.hvUnits.stringValue) : {}; }
+      catch(e){ console.error('[OIC] ❌ Parse error — hvUnits:', e.message); hvUnits={}; }
+
+      try{ attendance = doc.fields.attendance ? JSON.parse(doc.fields.attendance.stringValue) : {}; }
+      catch(e){ console.error('[OIC] ❌ Parse error — attendance:', e.message); attendance={}; }
+
+      try{ teamwork = doc.fields.teamwork ? JSON.parse(doc.fields.teamwork.stringValue) : {}; }
+      catch(e){ console.error('[OIC] ❌ Parse error — teamwork:', e.message); teamwork={}; }
+
+      try{ growth = doc.fields.growth ? JSON.parse(doc.fields.growth.stringValue) : {}; }
+      catch(e){ console.error('[OIC] ❌ Parse error — growth:', e.message); growth={}; }
+
+      Object.keys(doc.fields).forEach(k=>{
+        if(k.startsWith('daily_')){
+          try{ daily[+k.slice(6)]=JSON.parse(doc.fields[k].stringValue); }
+          catch(e){ console.error('[OIC] ❌ Parse error —', k+':', e.message); }
+        }
+      });
+
+      if(data&&data.daily){
+        Object.keys(data.daily).forEach(uid=>{
+          if(!daily[+uid])daily[+uid]=data.daily[uid];
+        });
+      }
+
+      console.log('[OIC] ✅ Data parsed:', {
+        emps: data?.emps?.length||0,
+        appts: appts.length,
+        dailyUsers: Object.keys(daily).join(','),
+        collBills: Object.keys(collBills).length+' users',
+        growth: Object.keys(growth).length+' records',
+        hvUnits: Object.keys(hvUnits).length,
+        attendance: Object.keys(attendance).length,
+        teamwork: Object.keys(teamwork).length,
+      });
+
+      return {data, appts, daily, collBills, hvUnits, attendance, teamwork, growth};
+    })
+    .catch(err=>{
+      console.error('[OIC] 🔥 Firebase load failed:', err);
+      return {data:null,appts:[],daily:{},collBills:{},hvUnits:{},attendance:{},teamwork:{},growth:{}};
     });
-  }
-  const hvUnits  = doc.fields.hvUnits   ? JSON.parse(doc.fields.hvUnits.stringValue)   : {};
-  const attendance=doc.fields.attendance? JSON.parse(doc.fields.attendance.stringValue): {};
-  const teamwork  = doc.fields.teamwork  ? JSON.parse(doc.fields.teamwork.stringValue)  : {};
-  const growth=doc.fields.growth?JSON.parse(doc.fields.growth.stringValue):{};
-  return {data, appts, daily, collBills, hvUnits, attendance, teamwork, growth};
-}).catch(()=>({data:null,appts:[],daily:{},collBills:{},hvUnits:{},attendance:{},teamwork:{},growth:{}}));
+};
 // Save general data (no daily, no appts)
 const fbSave = (data) => fetch(FB_URL+'&updateMask.fieldPaths=data',{
   method:'PATCH', headers:{'Content-Type':'application/json'},
@@ -560,35 +608,73 @@ function App(){
   const[daysOff,setDaysOff]=useState({});
   // ── Firestore REST: load on mount ─────────────────────────────────────────
   React.useEffect(()=>{
+    _loaded.current = false; // Prevent auto-saves during load
+    console.log('[OIC] 🚀 App mounted — loading Firebase data...');
     fbLoad().then(loaded=>{
+      console.log('[OIC] 🔃 Restoring application state...');
       const d=loaded.data;
+
       if(d){
-        if(d.emps&&d.emps.length>0)setEmps(d.emps);
-        if(d.pw&&Object.keys(d.pw).length>0)setPw(d.pw);
-        if(d.sk)setSk(d.sk);
-        if(d.obs)setObs(d.obs);
-        if(d.daysOff)setDaysOff(d.daysOff);
-        if(d.empKpiT)setEmpKpiT(d.empKpiT);
+        if(d.emps&&d.emps.length>0){ setEmps(d.emps); console.log('[OIC] ✓ Employees restored:', d.emps.map(e=>e.name).join(', ')); }
+        else{ console.warn('[OIC] ⚠️ No employees in data'); }
+        if(d.pw&&Object.keys(d.pw).length>0){ setPw(d.pw); console.log('[OIC] ✓ Passwords restored'); }
+        if(d.sk&&Object.keys(d.sk).length>0){ setSk(d.sk); console.log('[OIC] ✓ Skills restored'); }
+        if(d.obs&&Object.keys(d.obs).length>0){ setObs(d.obs); console.log('[OIC] ✓ Observations restored'); }
+        if(d.daysOff&&Object.keys(d.daysOff).length>0){ setDaysOff(d.daysOff); console.log('[OIC] ✓ DaysOff restored'); }
+        if(d.empKpiT&&Object.keys(d.empKpiT).length>0){ setEmpKpiT(d.empKpiT); console.log('[OIC] ✓ KPI targets restored'); }
+      } else {
+        console.warn('[OIC] ⚠️ No general data field — likely first load');
       }
-      // Load collBills from isolated Firebase field
-      if(loaded.collBills&&Object.keys(loaded.collBills).length>0)setCollBills(loaded.collBills);
-      if(loaded.hvUnits&&Object.keys(loaded.hvUnits).length>0)setHvUnits(loaded.hvUnits);
-      if(loaded.attendance&&Object.keys(loaded.attendance).length>0)setAttendance(loaded.attendance);
-      if(loaded.teamwork&&Object.keys(loaded.teamwork).length>0)setTeamwork(loaded.teamwork);
-      if(loaded.growth&&Object.keys(loaded.growth).length>0)setGrowth(loaded.growth);
-      // Merge legacy data.daily with per-user isolated fields (isolated takes priority)
+
+      if(loaded.collBills&&Object.keys(loaded.collBills).length>0){
+        setCollBills(loaded.collBills);
+        console.log('[OIC] ✓ Collected bills restored for', Object.keys(loaded.collBills).length, 'staff');
+      }
+      if(loaded.hvUnits&&Object.keys(loaded.hvUnits).length>0){
+        setHvUnits(loaded.hvUnits); console.log('[OIC] ✓ HV units restored');
+      }
+      if(loaded.attendance&&Object.keys(loaded.attendance).length>0){
+        setAttendance(loaded.attendance); console.log('[OIC] ✓ Attendance restored');
+      }
+      if(loaded.teamwork&&Object.keys(loaded.teamwork).length>0){
+        setTeamwork(loaded.teamwork); console.log('[OIC] ✓ Teamwork restored');
+      }
+      if(loaded.growth&&Object.keys(loaded.growth).length>0){
+        setGrowth(loaded.growth);
+        console.log('[OIC] ✓ Growth records restored:', Object.keys(loaded.growth).length, 'entries');
+      }
+
       const merged={...((d&&d.daily)||{}),...(loaded.daily||{})};
       if(Object.keys(merged).length>0){
         setDaily(merged);
-        // Force migration: save any records not yet in isolated fields
+        console.log('[OIC] ✓ Daily records restored for users:', Object.keys(merged).join(', '));
         Object.keys(merged).forEach(uid=>{
           if(!loaded.daily[+uid]&&merged[+uid]&&merged[+uid].length>0){
+            console.log('[OIC] 🔀 Migrating daily records for user', uid);
             fbSaveDaily(+uid,merged[+uid]);
           }
         });
+      } else {
+        console.warn('[OIC] ⚠️ No daily records to restore');
       }
-      if(loaded.appts&&loaded.appts.length>0)setAppts(loaded.appts);
-      setTimeout(()=>{ _loaded.current=true; },0);
+
+      if(loaded.appts&&loaded.appts.length>0){
+        setAppts(loaded.appts);
+        console.log('[OIC] ✓ Appointments restored:', loaded.appts.length);
+      }
+
+      setDbReady(true);
+
+      // 100ms delay: ensures React finishes all state updates + effects
+      // before enabling auto-saves (prevents overwriting Firebase with empty state)
+      setTimeout(()=>{
+        _loaded.current = true;
+        console.log('[OIC] ✅ State restoration complete — auto-save enabled');
+      }, 100);
+
+    }).catch(err=>{
+      console.error('[OIC] 🔥 Mount load error:', err);
+      _loaded.current = true;
       setDbReady(true);
     });
   },[]);
@@ -610,6 +696,12 @@ function App(){
   React.useEffect(()=>{if(!_loaded.current)return;const t=setTimeout(()=>{fbSaveHvUnits(hvUnits);},600);return()=>clearTimeout(t);},[hvUnits]);
   React.useEffect(()=>{if(!_loaded.current)return;const t=setTimeout(()=>{fbSaveAttend(attendance);},600);return()=>clearTimeout(t);},[attendance]);
   React.useEffect(()=>{if(!_loaded.current)return;const t=setTimeout(()=>{fbSaveTeamwork(teamwork);},600);return()=>clearTimeout(t);},[teamwork]);
+  // ── Firestore REST: auto-save growth records ──────────────────────────────
+  React.useEffect(()=>{
+    if(!_loaded.current)return;
+    const t=setTimeout(()=>{ fbSaveGrowth(growth); },600);
+    return ()=>clearTimeout(t);
+  },[growth]);
   // ── Firestore REST: auto-save each user's daily records in isolated field ──
   const _prevDaily=React.useRef({});
   React.useEffect(()=>{
