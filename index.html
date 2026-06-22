@@ -734,7 +734,7 @@ h('button',{style:{padding:'4px 10px',borderRadius:99,border:'none',background:'
 
   // ── TEAM A DASHBOARD ────────────────────────────────────────────────────────
   function aTeamDash(){
-    const teamEmps=emps.filter(e=>e.active&&e.tier!=='Owner');
+    const teamEmps=emps.filter(e=>e.active&&e.tier!=='Owner'&&e.tier!=='Team A'&&e.branch===(user&&user.branch));
     const today=new Date();
     const daysSinceMon=today.getDay()===0?6:today.getDay()-1;
     const dim=new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
@@ -1129,7 +1129,7 @@ h('button',{style:{padding:'4px 10px',borderRadius:99,border:'none',background:'
       isAdmin&&h('div',{style:{...S.card,marginTop:0}},
         h('div',{style:{...S.ttl,marginBottom:10}},tr('团队成长记录','Team Growth Records')),
         h('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:selGE?12:0}},
-          emps.filter(x=>x.active&&x.tier!=='Owner'&&x.id!==emp.id).map(x=>{
+          emps.filter(x=>x.active&&x.tier!=='Owner'&&x.tier!=='Team A'&&x.branch===emp.branch).map(x=>{
             const cnt=Object.keys(growth).filter(k=>k.startsWith(String(x.id)+'_')).length;
             return h('div',{key:x.id,style:{display:'flex',alignItems:'center',gap:6,padding:'7px 14px',borderRadius:20,cursor:'pointer',fontSize:13,fontWeight:growthSelEmp===x.id?600:400,background:growthSelEmp===x.id?TEAL:cnt>0?TL:'var(--color-background-secondary)',color:growthSelEmp===x.id?'#fff':TD,border:`1.5px solid ${growthSelEmp===x.id?TEAL:cnt>0?TEAL+'50':'var(--color-border)'}`,transition:'all 0.15s'},onClick:()=>setGrowthSelEmp(growthSelEmp===x.id?null:x.id)},
               x.name,cnt>0&&h('span',{style:{fontSize:10,background:growthSelEmp===x.id?'rgba(255,255,255,0.3)':TEAL+'20',color:growthSelEmp===x.id?'#fff':TEAL,padding:'1px 6px',borderRadius:99,marginLeft:2}},cnt+tr(' 周',' wks'))
@@ -1722,10 +1722,248 @@ h('div',{style:S.card},h('div',{style:S.ttl},tr('本月记录明细','Monthly Re
   const bonusE=emps.filter(e=>{const d=getSkData(sk,e.id,LATEST_M);return e.active&&d&&skT(d.current)>=70;});
   const pendA=appts.filter(a=>a.status!=='完成');
   const AT=[{id:'my_overview',label:tr('我的总览','My Overview'),icon:'ti-user'},
-{id:'team_dash',label:tr('Team Dashboard','Team Dashboard'),icon:'ti-chart-dots'},{id:'dashboard',label:tr('总览','Overview'),icon:'ti-layout-dashboard'},{id:'staff',label:tr('员工档案','Staff'),icon:'ti-users'},{id:'skills',label:tr('技能评估','Skills'),icon:'ti-star'},{id:'appts',label:tr('预约记录','Appointments'),icon:'ti-calendar'},{id:'my_kpi',label:tr('每日记录','Daily Log'),icon:'ti-pencil'},{id:'upgrade',label:tr('升级评估','Promotion'),icon:'ti-trending-up'},{id:'settings',label:tr('设置','Settings'),icon:'ti-settings'}];
+{id:'team_dash',label:tr('Team Dashboard','Team Dashboard'),icon:'ti-chart-dots'},{id:'dashboard',label:tr('总览','Overview'),icon:'ti-layout-dashboard'},{id:'staff',label:isOwner?tr('员工档案','Staff'):tr('团队管理','Team Mgmt'),icon:isOwner?'ti-users':'ti-layout-board'},{id:'skills',label:tr('技能评估','Skills'),icon:'ti-star'},{id:'appts',label:tr('预约记录','Appointments'),icon:'ti-calendar'},{id:'my_kpi',label:tr('每日记录','Daily Log'),icon:'ti-pencil'},{id:'upgrade',label:tr('升级评估','Promotion'),icon:'ti-trending-up'},{id:'settings',label:tr('设置','Settings'),icon:'ti-settings'}];
 
   function aDash(){const aE=emps.filter(e=>e.active);return h('div',null,h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:10,marginBottom:14}},h('div',{style:S.met},h('div',{style:{fontSize:11,color:'var(--color-text-secondary)',marginBottom:4}},tr('在职员工','Active Staff')),h('div',{style:{fontSize:22,fontWeight:500}},aE.length)),h('div',{style:{...S.met,background:bonusE.length>0?'var(--color-background-success)':undefined}},h('div',{style:{fontSize:11,color:bonusE.length>0?'var(--color-text-success)':'var(--color-text-secondary)',marginBottom:4}},tr('技能奖励达标','Skill Bonus')),h('div',{style:{fontSize:22,fontWeight:500,color:bonusE.length>0?'var(--color-text-success)':undefined}},bonusE.length)),h('div',{style:{...S.met,background:allUR.length>0?'var(--color-background-warning)':undefined}},h('div',{style:{fontSize:11,color:allUR.length>0?'var(--color-text-warning)':'var(--color-text-secondary)',marginBottom:4}},tr('可升级候选','Ready to Promote')),h('div',{style:{fontSize:22,fontWeight:500,color:allUR.length>0?'var(--color-text-warning)':undefined}},allUR.length)),h('div',{style:{...S.met,background:pendA.length>0?'var(--color-background-danger)':undefined}},h('div',{style:{fontSize:11,color:pendA.length>0?'var(--color-text-danger)':'var(--color-text-secondary)',marginBottom:4}},tr('待处理预约',tr('待处理预约','Pending Appts'))),h('div',{style:{fontSize:22,fontWeight:500,color:pendA.length>0?'var(--color-text-danger)':undefined}},pendA.length))),h('div',{style:S.card},h('div',{style:S.ttl},tr('本月 KPI 进度','Monthly KPI Progress')),aE.filter(e=>e.tier!=='Owner'&&(isOwner||e.tier!=='Team A')).map(e=>{const md2=gmData(e.id,NOW_M,daily);const tgt2=getKpiTgt(e);const pct=tgt2.sales>0?Math.min(100,Math.round(md2.sales/tgt2.sales*100)):0;const pass2=kPass(e.tier,md2,empKpiT[e.id]);const t2=TIERS[e.tier];return h('div',{key:e.id,style:{display:'flex',alignItems:'center',gap:10,padding:'7px 0',borderBottom:'0.5px solid var(--color-border-tertiary)'}},h(Av,{name:e.name,sz:28,bg:t2.c}),h('div',{style:{flex:1,minWidth:0}},h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:3}},h('span',{style:{fontSize:13,fontWeight:500}},e.name),h('span',{style:{fontSize:12,color:pass2?'var(--color-text-success)':'var(--color-text-secondary)'}},tgt2.sales?'RM '+md2.sales.toLocaleString()+' / '+tgt2.sales.toLocaleString():'RM '+md2.sales.toLocaleString())),h('div',{style:{height:6,background:'var(--color-background-secondary)',borderRadius:99,overflow:'hidden'}},h('div',{style:{height:'100%',width:pct+'%',background:kpiColor(pct),borderRadius:99}}))),h('span',{style:{fontSize:12,fontWeight:700,color:kpiColor(pct),minWidth:32,textAlign:'right'}},pct+'%'));})),
 h('div',{style:S.card},h('div',{style:S.ttl},tr('本月镜片销售汇总','Monthly Lens Sales Summary')),aE.filter(e=>e.tier!=='Owner'&&(isOwner||e.tier!=='Team A')).map(e=>{const ents2=(daily[e.id]||[]).filter(x=>x.date.startsWith(NOW_M));const sl2=ents2.reduce((a,x)=>a+(x.sL||0),0),sb2=ents2.reduce((a,x)=>a+(x.sB||0),0),rl2=ents2.reduce((a,x)=>a+(x.rL||0),0),rb2=ents2.reduce((a,x)=>a+(x.rB||0),0);const tot2=sl2+sb2+rl2+rb2,br2=sb2+rb2,bPct2=tot2>0?Math.round(br2/tot2*100):0;const t2=TIERS[e.tier];return h('div',{key:e.id,style:{display:'flex',alignItems:'center',gap:8,padding:'8px 0',borderBottom:'0.5px solid var(--color-border-tertiary)'}},h(Av,{name:e.name,sz:26,bg:t2.c}),h('div',{style:{flex:1,minWidth:0}},h('div',{style:{fontSize:12,fontWeight:500,marginBottom:4}},e.name),tot2>0?h('div',null,h('div',{style:{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}},sl2>0&&h('span',{style:{fontSize:11,color:TEAL,background:'#e8f5f0',padding:'1px 6px',borderRadius:99,border:'1px solid #c8e6dc'}},'SL '+sl2),sb2>0&&h('span',{style:{fontSize:11,color:AMB,background:AMB_L,padding:'1px 6px',borderRadius:99,border:'1px solid #fde68a'}},'SB '+sb2),rl2>0&&h('span',{style:{fontSize:11,color:TEAL,background:'#e8f5f0',padding:'1px 6px',borderRadius:99,border:'1px solid #c8e6dc'}},'RL '+rl2),rb2>0&&h('span',{style:{fontSize:11,color:AMB,background:AMB_L,padding:'1px 6px',borderRadius:99,border:'1px solid #fde68a'}},'RB '+rb2)),h('div',{style:{display:'flex',alignItems:'center',gap:6}},h('div',{style:{flex:1,height:5,background:'#e8f5f0',borderRadius:99,overflow:'hidden'}},h('div',{style:{height:'100%',width:bPct2+'%',background:AMB,borderRadius:99}})),h('span',{style:{fontSize:11,color:'var(--color-text-secondary)',whiteSpace:'nowrap'}},tot2+tr(' 片',' pcs')+' · Branded '+bPct2+'%'))):h('span',{style:{fontSize:11,color:'var(--color-text-tertiary)'}},tr('暂无记录','No records'))));})));}
+
+
+  // ── INTEGRATED TEAM MANAGEMENT (Team A only) ─────────────────────────────
+  function aTeamManage(){
+    const branchEmps=emps.filter(e=>e.active&&e.tier!=='Owner'&&e.tier!=='Team A'&&e.branch===(user&&user.branch));
+    const today=new Date();
+    const dim=new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
+    const el=Math.max(today.getDate(),1);
+
+    // ── Branch summary calcs ─────────────────────────────────────────────────
+    const avgKpiRate=branchEmps.length?Math.round(branchEmps.map(e=>{
+      const tgt=getKpiTgt(e);const md=gmData(e.id,NOW_M,daily);
+      return tgt.sales?Math.min(Math.round(md.sales/el*dim)/tgt.sales*100,100):0;
+    }).reduce((a,b)=>a+b,0)/branchEmps.length):0;
+
+    const empSkPct2=(id)=>{
+      for(const m of [...KPI_MONTHS].reverse()){
+        const d=getSkData(sk,id,m);
+        if(d&&d.current&&d.current.length)return Math.round(skT(d.current)/(d.current.length*10)*100);
+      }
+      return 0;
+    };
+    const avgSk=branchEmps.length?Math.round(branchEmps.map(e=>empSkPct2(e.id)).reduce((a,b)=>a+b,0)/branchEmps.length):0;
+    const weekSubs=branchEmps.filter(e=>{const r=growth[String(e.id)+'_'+CUR_WEEK]||{};return !!(r.proudMoment||r.challenge||r.learning||r.breakthrough);}).length;
+    const coached=branchEmps.filter(e=>{const r=growth[String(e.id)+'_'+CUR_WEEK]||{};return !!(r.coachObs||r.coachAdvice);}).length;
+
+    // ── Individual staff card ────────────────────────────────────────────────
+    const staffCard=(e)=>{
+      const isOpen=selEmp===e.id;
+      const tgt=getKpiTgt(e);
+      const md=gmData(e.id,NOW_M,daily);
+      const kpiRate=tgt.sales&&tgt.sales>0?Math.min(md.sales/tgt.sales,1.5):0;
+      const skPct=empSkPct2(e.id);
+
+      // Skill delta
+      const skMons=KPI_MONTHS.filter(m=>{const d=getSkData(sk,e.id,m);return d&&d.current&&d.current.length;});
+      let skDelta=0;
+      if(skMons.length>=2){
+        const d0=getSkData(sk,e.id,skMons[skMons.length-1]);const d1=getSkData(sk,e.id,skMons[skMons.length-2]);
+        if(d0&&d1&&d0.current&&d1.current){
+          const s0=Math.round(skT(d0.current)/(d0.current.length*10)*100);
+          const s1=Math.round(skT(d1.current)/(d1.current.length*10)*100);
+          skDelta=s0-s1;
+        }
+      }
+
+      // Promotion
+      const promoMons=KPI_MONTHS.slice(-3).map(m=>{const d=gmData(e.id,m,daily);return{m,pass:d.count>0&&kPass(e.tier,d,empKpiT[e.id])};});
+      const promoCnt=promoMons.filter(x=>x.pass).length;
+
+      // Last coaching
+      const lastCoach=Object.entries(growth).filter(([k])=>k.startsWith(String(e.id)+'_')&&(growth[k].coachObs||growth[k].coachAdvice)).sort(([a],[b])=>b.localeCompare(a))[0];
+
+      // Current week coaching
+      const ck=String(e.id)+'_'+CUR_WEEK;const cr=growth[ck]||{};
+      const setCF=(field,val)=>setGrowth(g=>({...g,[ck]:{...(g[ck]||{staffId:e.id,branch:e.branch,week:CUR_WEEK,createdAt:new Date().toISOString()}),[field]:val}}));
+
+      const joinDate=e.joinYear?(e.joinYear+(e.joinMonth?'-'+String(e.joinMonth).padStart(2,'0'):'')):'—';
+      const stage=GROWTH_STAGE[e.tier]||GROWTH_STAGE['Team C'];
+      const hasReview=!!(growth[ck]&&(growth[ck].proudMoment||growth[ck].challenge));
+
+      return h('div',{key:e.id,style:{...S.card,padding:0,overflow:'hidden',marginBottom:6}},
+
+        // ── Header (always visible, clickable) ──────────────────────────────
+        h('div',{style:{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer',background:isOpen?TEAL+'10':'transparent',borderBottom:isOpen?`1px solid ${TEAL}30`:'none'},
+          onClick:()=>setSelEmp(isOpen?null:e.id)},
+          h('div',{style:{width:40,height:40,borderRadius:'50%',background:isOpen?TEAL:'var(--color-background-secondary)',color:isOpen?'#fff':TD,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:16,flexShrink:0}},e.name.charAt(0).toUpperCase()),
+          h('div',{style:{flex:1,minWidth:0}},
+            h('div',{style:{display:'flex',alignItems:'center',gap:6,marginBottom:4}},
+              h('span',{style:{fontWeight:700,fontSize:14,color:TD}},e.name),
+              h('span',{style:{fontSize:10,background:TEAL+'18',color:TEAL,padding:'1px 7px',borderRadius:99,fontWeight:600}},e.tier),
+              hasReview&&h('span',{style:{fontSize:10,background:'#f0fdf4',color:'#16a34a',padding:'1px 6px',borderRadius:99}},tr('✓ 已提交','✓ Submitted')),
+              cr.coachObs&&h('span',{style:{fontSize:10,background:'#eff6ff',color:'#2563eb',padding:'1px 6px',borderRadius:99}},tr('💬 已点评','💬 Coached'))
+            ),
+            h('div',{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+              h('div',{style:{display:'flex',alignItems:'center',gap:5}},
+                h('div',{style:{width:70,height:4,background:'var(--color-background-secondary)',borderRadius:2,overflow:'hidden'}},
+                  h('div',{style:{width:Math.round(Math.min(kpiRate,1)*100)+'%',height:'100%',background:kpiColor(Math.round(kpiRate*100)),borderRadius:2}})
+                ),
+                h('span',{style:{fontSize:10,color:'var(--color-text-secondary)'}},tr('KPI ','KPI ')+Math.round(kpiRate*100)+'%')
+              ),
+              skPct>0&&h('span',{style:{fontSize:10,color:'var(--color-text-secondary)'}},tr('技能 ','Skill ')+skPct+'%'),
+              h('span',{style:{fontSize:10,color:promoCnt>=3?'#16a34a':'#d97706'}},promoCnt+'/3 '+tr('月','mo'))
+            )
+          ),
+          h('i',{className:'ti ti-chevron-'+(isOpen?'up':'down'),style:{color:'var(--color-text-secondary)',fontSize:14,flexShrink:0}})
+        ),
+
+        // ── Expanded content ─────────────────────────────────────────────────
+        isOpen&&h('div',{style:{padding:'14px'}},
+
+          // Info badges
+          h('div',{style:{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}},
+            h('div',{style:{background:stage.color+'12',border:`1px solid ${stage.color}30`,borderRadius:8,padding:'6px 12px',textAlign:'center'}},
+              h('div',{style:{fontSize:15}},stage.emoji),
+              h('div',{style:{fontSize:10,fontWeight:700,color:stage.color}},tr(stage.zh,stage.en))
+            ),
+            h('div',{style:{background:'var(--color-background-secondary)',borderRadius:8,padding:'6px 12px',textAlign:'center'}},
+              h('div',{style:{fontSize:12,fontWeight:700,color:TD}},e.branch),
+              h('div',{style:{fontSize:10,color:'var(--color-text-secondary)'}},tr('分店','Branch'))
+            ),
+            joinDate!=='—'&&h('div',{style:{background:'var(--color-background-secondary)',borderRadius:8,padding:'6px 12px',textAlign:'center'}},
+              h('div',{style:{fontSize:12,fontWeight:700,color:TD}},joinDate),
+              h('div',{style:{fontSize:10,color:'var(--color-text-secondary)'}},tr('入职','Joined'))
+            )
+          ),
+
+          // KPI Progress
+          h('div',{style:{marginBottom:10}},
+            h('div',{style:{fontSize:12,fontWeight:700,color:TD,marginBottom:6}},tr('📊 本月KPI进度','📊 Monthly KPI Progress')),
+            tgt.sales&&h(PBar,{label:tr('销售额','Sales'),current:md.sales,target:tgt.sales,unit:'RM'}),
+            tgt.qty&&h(PBar,{label:tr('销售量','Units'),current:md.qty,target:tgt.qty,unit:tr(' 单',' units')}),
+            tgt.collected&&h(PBar,{label:tr('已收订单 RM','Collected RM'),current:(collBills[e.id]&&collBills[e.id][NOW_M])||0,target:tgt.collected,unit:'RM'}),
+            tgt.avgSale&&md.qty>0&&h(PBar,{label:tr('平均单价','Avg Sale'),current:md.avgSale,target:tgt.avgSale,unit:' RM'}),
+            tgt.review&&h(PBar,{label:tr('Google评价','Google Reviews'),current:md.review,target:tgt.review,unit:tr(' 则',' reviews')})
+          ),
+
+          // Skill + Promotion row
+          h('div',{style:{display:'flex',gap:8,marginBottom:10}},
+            h('div',{style:{flex:1,background:'var(--color-background-secondary)',borderRadius:8,padding:'10px'}},
+              h('div',{style:{fontSize:11,fontWeight:700,color:TD,marginBottom:4}},tr('🎯 技能评估','🎯 Skill Matrix')),
+              skPct>0
+                ?h('div',null,
+                  h('div',{style:{display:'flex',alignItems:'baseline',gap:4}},
+                    h('span',{style:{fontSize:24,fontWeight:900,color:kpiColor(skPct)}},skPct+'%'),
+                    skDelta!==0&&h('span',{style:{fontSize:11,color:skDelta>0?'#16a34a':'#dc2626',fontWeight:600}},(skDelta>0?'↑+':'↓')+skDelta)
+                  ),
+                  h('div',{style:{height:4,background:'var(--color-border)',borderRadius:2,marginTop:4,overflow:'hidden'}},
+                    h('div',{style:{width:skPct+'%',height:'100%',background:kpiColor(skPct),borderRadius:2}})
+                  )
+                )
+                :h('div',{style:{fontSize:12,color:'var(--color-text-secondary)'}},tr('暂无评估记录','No assessment yet'))
+            ),
+            h('div',{style:{flex:1,background:'var(--color-background-secondary)',borderRadius:8,padding:'10px'}},
+              h('div',{style:{fontSize:11,fontWeight:700,color:TD,marginBottom:6}},tr('🏆 晋升准备度','🏆 Promotion Ready')),
+              h('div',{style:{display:'flex',gap:4,marginBottom:4}},
+                promoMons.map(({m,pass})=>h('div',{key:m,style:{flex:1,textAlign:'center',background:pass?'#dcfce7':'#fee2e2',borderRadius:6,padding:'4px 2px'}},
+                  h('div',{style:{fontSize:9,color:'var(--color-text-secondary)'}},m.slice(5)),
+                  h('div',{style:{fontSize:13,fontWeight:700,color:pass?'#16a34a':'#dc2626'}},pass?'✓':'✗')
+                ))
+              ),
+              h('div',{style:{fontSize:11,fontWeight:700,color:promoCnt>=3?'#16a34a':promoCnt>=2?'#d97706':'#dc2626'}},
+                promoCnt+'/3 '+tr('月达标',promoCnt>=3?'months — Ready!':'months met'))
+            )
+          ),
+
+          // Team A eval inputs (for Team C)
+          e.tier==='Team C'&&h('div',{style:{background:'var(--color-background-secondary)',borderRadius:8,padding:'10px',marginBottom:10}},
+            h('div',{style:{fontSize:11,fontWeight:700,color:TD,marginBottom:8}},tr('📋 绩效数据录入（本月）','📋 Eval Data Entry (This Month)')),
+            h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}},
+              h('div',null,
+                h('div',{style:{fontSize:10,fontWeight:600,color:'var(--color-text-secondary)',marginBottom:3}},tr('单价RM500+ 单数','Units ≥RM500')),
+                h('input',{style:{...S.inp,marginBottom:0,fontSize:12},type:'number',min:0,placeholder:'0',
+                  value:(hvUnits[e.id]&&hvUnits[e.id][NOW_M])||'',
+                  onChange:ev=>setHvUnits(h2=>({...h2,[e.id]:{...(h2[e.id]||{}),[NOW_M]:+ev.target.value}}))})
+              ),
+              h('div',null,
+                h('div',{style:{fontSize:10,fontWeight:600,color:'var(--color-text-secondary)',marginBottom:3}},tr('迟到/缺勤次数','Absent/Late')),
+                h('input',{style:{...S.inp,marginBottom:0,fontSize:12},type:'number',min:0,placeholder:'0',
+                  value:(attendance[e.id]&&attendance[e.id][NOW_M])??'',
+                  onChange:ev=>setAttendance(a=>({...a,[e.id]:{...(a[e.id]||{}),[NOW_M]:+ev.target.value}}))})
+              ),
+              h('div',null,
+                h('div',{style:{fontSize:10,fontWeight:600,color:'var(--color-text-secondary)',marginBottom:3}},tr('团队配合度（0-10）','Teamwork (0-10)')),
+                h('input',{style:{...S.inp,marginBottom:0,fontSize:12},type:'number',min:0,max:10,placeholder:'0',
+                  value:(teamwork[e.id]&&teamwork[e.id][NOW_M]&&teamwork[e.id][NOW_M].score)??'',
+                  onChange:ev=>setTeamwork(tw=>({...tw,[e.id]:{...(tw[e.id]||{}),[NOW_M]:{...((tw[e.id]&&tw[e.id][NOW_M])||{}),score:+ev.target.value}}}))}
+                )
+              )
+            )
+          ),
+
+          // Last coaching note
+          lastCoach&&h('div',{style:{background:TL,borderRadius:8,padding:'9px 12px',marginBottom:10,border:`1px solid ${TEAL}30`}},
+            h('div',{style:{fontSize:11,fontWeight:700,color:TEAL,marginBottom:5}},tr('💬 最近点评','💬 Last Coaching')+' · '+lastCoach[0].split('_').slice(1).join('_')),
+            lastCoach[1].coachObs&&h('div',{style:{fontSize:12,marginBottom:2}},h('span',{style:{fontWeight:600}},tr('观察：','Obs: ')),lastCoach[1].coachObs),
+            lastCoach[1].coachIssue&&h('div',{style:{fontSize:12,marginBottom:2}},h('span',{style:{fontWeight:600}},tr('问题：','Issue: ')),lastCoach[1].coachIssue),
+            lastCoach[1].coachAdvice&&h('div',{style:{fontSize:12,marginBottom:2}},h('span',{style:{fontWeight:600}},tr('建议：','Advice: ')),lastCoach[1].coachAdvice),
+            lastCoach[1].coachFollowUp&&h('div',{style:{fontSize:12}},h('span',{style:{fontWeight:600}},tr('跟进：','F/U: ')),lastCoach[1].coachFollowUp)
+          ),
+
+          // ── Coaching input ─────────────────────────────────────────────────
+          h('div',{style:{borderTop:`1.5px solid ${TEAL}30`,paddingTop:12}},
+            h('div',{style:{fontSize:12,fontWeight:700,color:TD,marginBottom:8}},
+              tr('📝 本周Coaching Notes','📝 Coaching Notes')+' · '+CUR_WEEK
+            ),
+            h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}},
+              [['coachObs',tr('👁 观察','👁 Observation')],
+               ['coachIssue',tr('🔍 问题分析','🔍 Issue Analysis')],
+               ['coachAdvice',tr('💡 行动建议','💡 Action Advice')],
+               ['coachFollowUp',tr('📌 下次跟进重点','📌 Next Follow-up')],
+              ].map(([field,label])=>h('div',{key:field},
+                h('div',{style:{fontSize:11,fontWeight:600,color:TD,marginBottom:3}},label),
+                h('textarea',{
+                  style:{width:'100%',padding:'7px 9px',borderRadius:7,border:'1px solid var(--color-border)',fontSize:12,lineHeight:1.5,resize:'vertical',minHeight:54,boxSizing:'border-box',fontFamily:'inherit',background:'var(--color-background)'},
+                  value:cr[field]||'',
+                  onChange:ev=>{const v=ev.target.value;setCF(field,v);}
+                })
+              ))
+            ),
+            h('button',{style:{...S.btnP,width:'100%'},
+              onClick:()=>setGrowth(g=>({...g,[ck]:{...(g[ck]||{staffId:e.id,branch:e.branch,week:CUR_WEEK,createdAt:new Date().toISOString()})}}))
+            },tr('💾 保存Coaching点评','💾 Save Coaching Notes'))
+          )
+        )
+      );
+    };
+
+    return h('div',null,
+      // ── Branch summary ────────────────────────────────────────────────────
+      h('div',{style:{...S.card,background:`linear-gradient(135deg,${TEAL}18,${TL})`,border:`1.5px solid ${TEAL}40`,marginBottom:0}},
+        h('div',{style:{marginBottom:10}},
+          h('div',{style:{fontSize:15,fontWeight:700,color:TD}},tr('🏢 '+(user&&user.branch||'')+'团队管理','🏢 '+(user&&user.branch||'')+' Team Management')),
+          h('div',{style:{fontSize:11,color:'var(--color-text-secondary)',marginTop:1}},tr('点击员工卡片展开详情与Coaching','Click a staff card to expand profile & coaching'))
+        ),
+        h('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
+          [{v:branchEmps.length,l:tr('成员','Members'),c:TEAL},
+           {v:avgKpiRate+'%',l:tr('平均KPI','Avg KPI'),c:kpiColor(avgKpiRate)},
+           {v:avgSk+'%',l:tr('平均技能','Avg Skill'),c:kpiColor(avgSk)},
+           {v:weekSubs+'/'+branchEmps.length,l:tr('本周提交','Reviews'),c:weekSubs===branchEmps.length?'#16a34a':'#d97706'},
+           {v:coached+'/'+branchEmps.length,l:tr('已Coaching','Coached'),c:coached===branchEmps.length?'#16a34a':TEAL},
+          ].map(({v,l,c})=>h('div',{key:l,style:{flex:1,minWidth:60,textAlign:'center',background:'rgba(255,255,255,0.75)',borderRadius:8,padding:'7px 4px'}},
+            h('div',{style:{fontSize:17,fontWeight:800,color:c}},v),
+            h('div',{style:{fontSize:9,color:'var(--color-text-secondary)',marginTop:1}},l)
+          ))
+        )
+      ),
+
+      // ── Staff accordion cards ─────────────────────────────────────────────
+      branchEmps.length===0
+        ?h('div',{style:{...S.card,textAlign:'center',padding:'30px',color:'var(--color-text-secondary)'}},
+          h('div',{style:{fontSize:30,marginBottom:8}},'👥'),
+          h('div',{style:{fontWeight:600}},tr('本分店暂无其他成员','No team members in this branch')),
+          h('div',{style:{fontSize:12,marginTop:4}},tr('请在设置里确认员工分店分配','Check branch assignment in Settings'))
+        )
+        :h('div',null,branchEmps.map(e=>staffCard(e)))
+    );
+  }
 
   function aStaff(){
     if(selEmp){const e=emps.find(x=>x.id===selEmp);const t2=TIERS[e.tier];const eo2=obs[e.id]||[];const upR=e.active&&e.tier!=='Team A'&&isUpReady(e);
@@ -2116,7 +2354,7 @@ h('div',{style:S.card},h('div',{style:S.ttl},tr('本月镜片销售汇总','Mont
   return h('div',{style:{fontFamily:'var(--font-sans)',color:'var(--color-text-primary)'}},
     showCPw&&CPwModal(),h(Header,{isAdmin:true}),
     h('div',{className:'ns',style:{display:'flex',background:'#fff',borderBottom:'2px solid #c8e6dc',overflowX:'auto'}},AT.filter(tb=>tb.id!=='settings'||isOwner).map(tb=>h('button',{key:tb.id,style:{flex:'0 0 auto',padding:'8px 10px',border:'none',borderBottom:tab===tb.id?`2px solid ${TEAL}`:'2px solid transparent',background:'transparent',color:tab===tb.id?TEAL:'var(--color-text-secondary)',cursor:'pointer',fontSize:11,fontWeight:tab===tb.id?500:400,display:'flex',flexDirection:'column',alignItems:'center',gap:2},onClick:()=>{setTab(tb.id);setSelEmp(null);setConfirmDeact(null);}},h('i',{className:`ti ${tb.icon}`,style:{fontSize:16},'aria-hidden':'true'}),tb.label))),
-    tab==='my_overview'&&aMyOverview(),tab==='team_dash'&&aTeamDash(),tab==='dashboard'&&aDash(),tab==='staff'&&aStaff(),tab==='skills'&&aSkills(),tab==='appts'&&renderAppts(true),tab==='upgrade'&&aUpgrade(),tab==='settings'&&isOwner&&aOwnerSettings(),tab==='my_kpi'&&aDailyLog(),
+    tab==='my_overview'&&aMyOverview(),tab==='team_dash'&&aTeamDash(),tab==='dashboard'&&aDash(),tab==='staff'&&(isOwner?aStaff():aTeamManage()),tab==='skills'&&aSkills(),tab==='appts'&&renderAppts(true),tab==='upgrade'&&aUpgrade(),tab==='settings'&&isOwner&&aOwnerSettings(),tab==='my_kpi'&&aDailyLog(),
     h('div',{style:{padding:'8px',background:'#0F6E56',borderTop:'none',fontSize:11,color:'rgba(255,255,255,0.75)',textAlign:'center',borderRadius:'0 0 var(--border-radius-lg) var(--border-radius-lg)'}},tr('OiC Optical 员工成长系统 v9.0','OiC Optical Staff Growth System v9.0'))
   );
 }
