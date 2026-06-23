@@ -586,6 +586,8 @@ function App(){
   const[collInput,setCollInput]=useState({mon:NOW_M,val:''});
   const[growth,setGrowth]=useState({});
   const[growthSelEmp,setGrowthSelEmp]=useState(null);
+  const[growthFilt,setGrowthFilt]=useState('all');
+  const[dashSelEmp,setDashSelEmp]=useState(null);
   // Performance evaluation data (Team A enters for Team C)
   const[hvUnits,setHvUnits]=useState({});       // 单价RM500+ 单数
   const[attendance,setAttendance]=useState({}); // 迟到/缺勤次数
@@ -826,307 +828,183 @@ h('button',{style:{padding:'4px 10px',borderRadius:99,border:'none',background:'
 
   // ── TEAM A DASHBOARD ────────────────────────────────────────────────────────
   function aTeamDash(){
-    const teamEmps=emps.filter(e=>e.active&&e.tier!=='Owner'&&e.tier!=='Team A'&&e.branch===(user&&user.branch));
+    const branchEmps=emps.filter(e=>e.active&&e.tier!=='Owner'&&e.tier!=='Team A'&&e.branch===(user&&user.branch));
     const today=new Date();
-    const daysSinceMon=today.getDay()===0?6:today.getDay()-1;
-    const dim=new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
-    const el=Math.max(today.getDate(),1);
 
-    // ── Skill helpers ────────────────────────────────────────────────────────
-    const empSkPct=(id)=>{
-      for(const mon of [...KPI_MONTHS].reverse()){
-        const d=getSkData(sk,id,mon);
-        if(d&&d.current&&d.current.length)return Math.round(skT(d.current)/(d.current.length*10)*100);
-      }
-      return 0;
-    };
-    const empSkDelta=(id)=>{
-      const mons=[...KPI_MONTHS].reverse();let arr=[];
-      for(const m of mons){const d=getSkData(sk,id,m);if(d&&d.current&&d.current.length)arr.push(Math.round(skT(d.current)/(d.current.length*10)*100));}
-      return arr.length>=2?arr[0]-arr[1]:0;
+    // ── Status helper ────────────────────────────────────────────────────────
+    const getS=(e)=>{
+      const ck=String(e.id)+'_'+CUR_WEEK;
+      const rec=growth[ck]||{};
+      const hasRev=!!(rec.proudMoment||rec.challenge||rec.learning||rec.breakthrough);
+      const hasCoach=!!(rec.coachObs||rec.coachIssue||rec.coachAdvice||rec.coachFollowUp);
+      const done=rec.coachingCompleted===true;
+      const status=!hasRev?'none':done||hasCoach?'done':'pending';
+      const sColor=status==='none'?'#d97706':status==='done'?'#16a34a':'#7c3aed';
+      const sBg=status==='none'?'#fffbeb':status==='done'?'#f0fdf4':'#f5f3ff';
+      const sBdr=status==='none'?'#fde68a':status==='done'?'#bbf7d0':'#ddd6fe';
+      const sLabel=status==='none'?tr('● 未提交','● Not Submitted'):status==='done'?tr('✓ 已完成点评','✓ Coaching Done'):tr('● 已提交待点评','● Needs Coaching');
+      return{ck,rec,hasRev,hasCoach,done,status,sColor,sBg,sBdr,sLabel};
     };
 
-    // ── Submission ───────────────────────────────────────────────────────────
-    const subStatus=teamEmps.map(e=>{
-      const key=String(e.id)+'_'+CUR_WEEK;const rec=growth[key]||{};
-      const submitted=!!(rec.proudMoment||rec.challenge||rec.learning||rec.breakthrough);
-      return{e,submitted};
+    const submittedCnt=branchEmps.filter(e=>getS(e).hasRev).length;
+    const doneCnt=branchEmps.filter(e=>getS(e).done||getS(e).hasCoach).length;
+    const pendingCnt=branchEmps.filter(e=>getS(e).status==='pending').length;
+
+    // Priority: pending coaching first, then not submitted, then done
+    const sortedEmps=[...branchEmps].sort((a,b)=>{
+      const o={pending:0,none:1,done:2};
+      return (o[getS(a).status]||0)-(o[getS(b).status]||0);
     });
-    const submitted=subStatus.filter(x=>x.submitted);
-    const missing=subStatus.filter(x=>!x.submitted);
+    const priorityList=[
+      ...branchEmps.filter(e=>getS(e).status==='pending'),
+      ...branchEmps.filter(e=>getS(e).status==='none'),
+    ].slice(0,6);
 
-    // ── Coaching completion ──────────────────────────────────────────────────
-    const coached=teamEmps.filter(e=>{
-      const rec=growth[String(e.id)+'_'+CUR_WEEK]||{};
-      return !!(rec.coachObs||rec.coachIssue||rec.coachAdvice||rec.coachFollowUp);
-    });
-    const coachRate=teamEmps.length?Math.round(coached.length/teamEmps.length*100):0;
+    // ── Individual coaching card ─────────────────────────────────────────────
+    const coachCard=(e)=>{
+      const isOpen=dashSelEmp===e.id;
+      const{ck,rec,hasRev,done,status,sColor,sBg,sBdr,sLabel}=getS(e);
+      return h('div',{key:e.id,style:{borderRadius:10,border:`1.5px solid ${isOpen?sColor:'var(--color-border)'}`,marginBottom:6,overflow:'hidden'}},
 
-    // ── Risk signals ─────────────────────────────────────────────────────────
-    const riskData=teamEmps.map(e=>{
-      let score=0;const signals=[];
-      const rec=growth[String(e.id)+'_'+CUR_WEEK]||{};
-      if(!(rec.proudMoment||rec.challenge)){score+=2;signals.push(tr('📭 本周未提交','📭 No review'));}
-      const att=(attendance[e.id]&&attendance[e.id][NOW_M])||0;
-      if(att>=3){score+=3;signals.push(tr('🚨 缺勤≥3次','🚨 Absent ≥3×'));}
-      else if(att===2){score+=2;signals.push(tr('⚠️ 缺勤2次','⚠️ Absent 2×'));}
-      else if(att===1){score+=1;signals.push(tr('📍 缺勤1次','📍 Absent 1×'));}
-      const tgt=getKpiTgt(e);const md=gmData(e.id,NOW_M,daily);
-      if(tgt.sales&&tgt.sales>0){
-        const proj=Math.round(md.sales/el*dim);const rate=proj/tgt.sales;
-        if(rate<0.6){score+=3;signals.push(tr('📉 KPI预测<60%','📉 KPI <60%'));}
-        else if(rate<0.8){score+=1;signals.push(tr('📊 KPI预测<80%','📊 KPI <80%'));}
-      }
-      const delta=empSkDelta(e.id);
-      if(delta<=-5){score+=2;signals.push(tr('📉 技能分下降','📉 Skill dropped'));}
-      const recs=Object.entries(growth).filter(([k])=>k.startsWith(String(e.id)+'_')).map(([,v])=>v).filter(v=>v.challenge).sort((a,b)=>(b.week||'').localeCompare(a.week||'')).slice(0,3);
-      if(recs.length>=2){
-        const seg=(s)=>s.split(/[\s,，。！？、]+/).filter(w=>w.length>1);
-        const w0=new Set(seg(recs[0].challenge));
-        if(seg(recs[1].challenge).filter(w=>w0.has(w)).length>=2){score+=1;signals.push(tr('🔄 挑战重复','🔄 Recurring challenge'));}
-      }
-      const recent=Object.entries(growth).filter(([k])=>k.startsWith(String(e.id)+'_')).map(([,v])=>v).sort((a,b)=>(b.week||'').localeCompare(a.week||'')).slice(0,2);
-      if(recent.length>=2&&recent.every(r=>!r.breakthrough)){score+=1;signals.push(tr('🎯 两周无突破目标','🎯 No goal 2wks'));}
-      return{e,score,signals,risk:score>=5?'high':score>=2?'medium':'low'};
-    }).sort((a,b)=>b.score-a.score);
+        // ── Card header (always visible) ─────────────────────────────────────
+        h('div',{style:{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer',background:isOpen?sBg:'transparent'},
+          onClick:()=>setDashSelEmp(isOpen?null:e.id)},
+          h('div',{style:{width:38,height:38,borderRadius:'50%',background:isOpen?sColor:'var(--color-background-secondary)',color:isOpen?'#fff':TD,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:15,flexShrink:0}},e.name.charAt(0).toUpperCase()),
+          h('div',{style:{flex:1,minWidth:0}},
+            h('div',{style:{display:'flex',alignItems:'center',gap:6,marginBottom:4}},
+              h('span',{style:{fontWeight:700,fontSize:14,color:TD}},e.name),
+              h('span',{style:{fontSize:10,background:TEAL+'15',color:TEAL,padding:'1px 6px',borderRadius:99,fontWeight:600}},e.tier)
+            ),
+            h('span',{style:{fontSize:11,color:sColor,background:sBg,border:`1px solid ${sBdr}`,padding:'2px 9px',borderRadius:99,fontWeight:600}},sLabel)
+          ),
+          h('div',{style:{display:'flex',alignItems:'center',gap:5,flexShrink:0}},
+            status==='pending'&&!isOpen&&h('span',{style:{fontSize:11,color:sColor,fontWeight:700}},tr('点评 →','Coach →')),
+            h('i',{className:'ti ti-chevron-'+(isOpen?'up':'down'),style:{color:'var(--color-text-secondary)',fontSize:13}})
+          )
+        ),
 
-    const highRisk=riskData.filter(x=>x.risk==='high');
-    const medRisk=riskData.filter(x=>x.risk==='medium');
-    const lowRisk=riskData.filter(x=>x.risk==='low');
+        // ── Expanded coaching panel ──────────────────────────────────────────
+        isOpen&&h('div',{style:{borderTop:`1px solid ${sBg}`,padding:'14px'}},
 
-    // ── Growth ranking ────────────────────────────────────────────────────────
-    const growthRank=teamEmps.map(e=>{
-      const tgt=getKpiTgt(e);const md=gmData(e.id,NOW_M,daily);
-      const kpiRate=tgt.sales&&tgt.sales>0?Math.min(md.sales/tgt.sales,1.5):0;
-      const skPct=empSkPct(e.id);const skDelta=empSkDelta(e.id);
-      const allRecs=Object.entries(growth).filter(([k])=>k.startsWith(String(e.id)+'_')).map(([,v])=>v);
-      const streak=allRecs.length;
-      const last4=allRecs.sort((a,b)=>(b.week||'').localeCompare(a.week||'')).slice(0,4);
-      const comp=last4.length?last4.map(r=>[r.proudMoment,r.challenge,r.learning,r.breakthrough].filter(Boolean).length).reduce((a,b)=>a+b,0)/(last4.length*4):0;
-      return{e,kpiRate,skPct,skDelta,streak,comp,total:Math.round(kpiRate*50+skPct*0.3+comp*20)};
-    }).sort((a,b)=>b.total-a.total);
+          // Growth review content
+          hasRev
+            ?h('div',{style:{marginBottom:14}},
+              h('div',{style:{display:'flex',alignItems:'center',gap:6,marginBottom:10}},
+                h('div',{style:{width:3,height:14,background:TEAL,borderRadius:2}}),
+                h('span',{style:{fontSize:12,fontWeight:700,color:TD}},tr('成长记录','Growth Review')+' · '+CUR_WEEK)
+              ),
+              h('div',{style:{background:TL,borderRadius:10,padding:'12px 14px',border:`1px solid ${TEAL}30`}},
+                [['⭐',tr('本周最值得骄傲的事情','Proudest Moment'),'proudMoment'],
+                 ['⚠️',tr('本周最大的挑战','Biggest Challenge'),'challenge'],
+                 ['📚',tr('本周学到了什么','What I Learned'),'learning'],
+                 ['🎯',tr('下周最想突破什么','Next Week Goal'),'breakthrough'],
+                ].filter(([,,f])=>rec[f]).map(([icon,label,field])=>
+                  h('div',{key:field,style:{marginBottom:10}},
+                    h('div',{style:{fontSize:11,fontWeight:700,color:'var(--color-text-secondary)',marginBottom:3}},icon+' '+label),
+                    h('div',{style:{fontSize:13,color:TD,lineHeight:1.6,padding:'7px 10px',background:'rgba(255,255,255,0.75)',borderRadius:7}},rec[field])
+                  )
+                )
+              )
+            )
+            :h('div',{style:{textAlign:'center',padding:'16px',background:'var(--color-background-secondary)',borderRadius:10,marginBottom:14,color:'var(--color-text-secondary)'}},
+              h('div',{style:{fontSize:22,marginBottom:4}},'📝'),
+              h('div',{style:{fontWeight:600,fontSize:13}},tr('员工尚未提交本周成长记录','No growth review submitted yet')),
+              h('div',{style:{fontSize:11,marginTop:3}},tr('可联系员工提醒','You may remind the employee'))
+            ),
 
-    // ── Team Health Score ─────────────────────────────────────────────────────
-    const avgKpi=teamEmps.length?Math.round(teamEmps.map(e=>{
-      const tgt=getKpiTgt(e);const md=gmData(e.id,NOW_M,daily);
-      return tgt.sales&&tgt.sales>0?Math.min(Math.round(md.sales/el*dim)/tgt.sales*100,100):0;
-    }).reduce((a,b)=>a+b,0)/teamEmps.length):0;
-    const avgSk=teamEmps.length?Math.round(teamEmps.map(e=>empSkPct(e.id)).reduce((a,b)=>a+b,0)/teamEmps.length):0;
-    const subScore=teamEmps.length?Math.round(submitted.length/teamEmps.length*100):0;
-    const healthScore=Math.round((avgKpi+avgSk+subScore+coachRate)/4);
-    const hc=healthScore>=80?'#16a34a':healthScore>=60?'#d97706':'#dc2626';
-    const hbg=healthScore>=80?'#f0fdf4':healthScore>=60?'#fffbeb':'#fef2f2';
-    const hIcon=healthScore>=80?'🟢':healthScore>=60?'🟡':'🔴';
-    const hLabel=healthScore>=80?tr('Healthy','Healthy'):healthScore>=60?tr('Attention','Attention'):tr('Critical','Critical');
-
-    // ── Action Center ─────────────────────────────────────────────────────────
-    const actions=[];
-    // Unsubmitted reviews
-    missing.forEach(({e})=>{
-      if(daysSinceMon>=1)actions.push({p:0,color:'#dc2626',icon:'🚨',
-        msg:tr(`${e.name} 未提交本周成长记录（已延迟${daysSinceMon}天）`,
-               `${e.name} hasn't submitted this week's review (${daysSinceMon}d late)`)});
-    });
-    // High risk
-    highRisk.forEach(({e,signals})=>{
-      if(!actions.some(a=>a.msg.includes(e.name)))
-        actions.push({p:1,color:'#d97706',icon:'⚠️',
-          msg:tr(`${e.name} 高风险 — ${signals[0]||'需要关注'}`,
-                 `${e.name} high risk — ${signals[0]||'needs attention'}`)});
-    });
-    // Submitted but not yet coached
-    submitted.forEach(({e})=>{
-      if(e.tier==='Team A'||e.tier==='Owner')return;
-      const rec=growth[String(e.id)+'_'+CUR_WEEK]||{};
-      if(!(rec.coachObs||rec.coachIssue||rec.coachAdvice||rec.coachFollowUp))
-        actions.push({p:2,color:TEAL,icon:'💬',
-          msg:tr(`${e.name} 已提交成长记录，待Coaching点评`,
-                 `${e.name} submitted review — awaiting coaching notes`)});
-    });
-    // Medium risk remaining
-    medRisk.forEach(({e,signals})=>{
-      if(!actions.some(a=>a.msg.includes(e.name)))
-        actions.push({p:3,color:'#6b7280',icon:'📊',
-          msg:tr(`${e.name} 中风险 — ${signals[0]||'持续关注'}`,
-                 `${e.name} medium risk — ${signals[0]||'keep monitoring'}`)});
-    });
-    const topActs=actions.sort((a,b)=>a.p-b.p).slice(0,6);
-
-    // ── Reusable helpers ──────────────────────────────────────────────────────
-    const AV=(name,sz,bg)=>h('div',{style:{width:sz,height:sz,borderRadius:'50%',background:bg||TEAL,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:Math.round(sz*0.38),flexShrink:0}},name.charAt(0).toUpperCase());
-    const PB=(pct,col)=>h('div',{style:{height:5,background:'var(--color-background-secondary)',borderRadius:3,overflow:'hidden',flex:1}},h('div',{style:{width:Math.round(Math.min(pct,100))+'%',height:'100%',background:col||TEAL,borderRadius:3}}));
-    const riskCard=(list,col,bg,border,icon,label)=>list.length>0&&h('div',{style:{marginBottom:8}},
-      h('div',{style:{fontSize:11,fontWeight:700,color:col,marginBottom:5}},icon+' '+label+' ('+list.length+')'),
-      list.map(({e,signals})=>h('div',{key:e.id,style:{display:'flex',alignItems:'flex-start',gap:8,padding:'8px 10px',background:bg,borderRadius:8,marginBottom:4,border:`1px solid ${border}`}},
-        AV(e.name,30,col),
-        h('div',{style:{flex:1}},
-          h('div',{style:{fontSize:13,fontWeight:600}},e.name,h('span',{style:{fontSize:11,color:'var(--color-text-secondary)',fontWeight:400,marginLeft:5}},e.tier)),
-          signals.length>0&&h('div',{style:{display:'flex',gap:4,flexWrap:'wrap',marginTop:3}},
-            signals.map((s,i)=>h('span',{key:i,style:{fontSize:10,background:'rgba(0,0,0,0.05)',borderRadius:99,padding:'2px 6px',color:'var(--color-text-secondary)'}},s))
+          // Coaching notes form
+          h('div',{style:{background:done?'#f0fdf4':'var(--color-background-secondary)',borderRadius:10,padding:'12px 14px',border:`1.5px solid ${done?'#16a34a40':TEAL+'30'}`}},
+            h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}},
+              h('div',{style:{fontSize:12,fontWeight:700,color:TD}},tr('📝 Coaching Notes','📝 Coaching Notes')),
+              done&&h('span',{style:{fontSize:10,color:'#16a34a',fontWeight:600,background:'#dcfce7',padding:'2px 8px',borderRadius:99}},
+                tr('✓ 已完成','✓ Done')+(rec.coachingCompletedAt?' · '+new Date(rec.coachingCompletedAt).toLocaleDateString():'')
+              )
+            ),
+            [['coachObs',tr('👁 观察','👁 Observation'),tr('记录员工表现与状态...','Employee behavior & status...')],
+             ['coachIssue',tr('🔍 问题分析','🔍 Issue Analysis'),tr('分析根本原因...','Root cause analysis...')],
+             ['coachAdvice',tr('💡 行动建议','💡 Action Advice'),tr('具体可执行的改进方向...','Specific actionable steps...')],
+             ['coachFollowUp',tr('📌 下次跟进重点','📌 Follow-up Focus'),tr('下次对话关注点...','Focus for next check-in...')],
+            ].map(([field,label,ph])=>h('div',{key:field,style:{marginBottom:8}},
+              h('div',{style:{fontSize:11,fontWeight:600,color:TD,marginBottom:3}},label),
+              h('textarea',{
+                style:{width:'100%',padding:'8px 10px',borderRadius:8,border:`1px solid ${done?'#16a34a30':'var(--color-border)'}`,fontSize:13,lineHeight:1.6,resize:'vertical',minHeight:58,boxSizing:'border-box',fontFamily:'inherit',background:done?'#f9fef9':'var(--color-background)'},
+                placeholder:ph,
+                value:rec[field]||'',
+                onChange:ev=>{const v=ev.target.value;setGrowth(g=>({...g,[ck]:{...(g[ck]||{staffId:e.id,branch:e.branch,week:CUR_WEEK,createdAt:new Date().toISOString()}),[field]:v}}));}
+              })
+            )),
+            h('button',{
+              style:{...S.btnP,width:'100%',marginTop:4},
+              onClick:()=>{
+                setGrowth(g=>({...g,[ck]:{...(g[ck]||{staffId:e.id,branch:e.branch,week:CUR_WEEK,createdAt:new Date().toISOString()}),coachingCompleted:true,coachingCompletedAt:new Date().toISOString()}}));
+                setDashSelEmp(null);
+              }
+            },tr('💾 保存 Coaching Notes — 标记已完成','💾 Save Coaching Notes — Mark Complete'))
           )
         )
-      ))
-    );
-    const RMEDS=['🥇','🥈','🥉'];const RCOLS=['#d97706','#6b7280','#a16207'];
+      );
+    };
 
     return h('div',null,
 
-      // ── HEADER BAR ──────────────────────────────────────────────────────────
+      // ── Header ────────────────────────────────────────────────────────────
       h('div',{style:{...S.card,background:`linear-gradient(135deg,${TEAL}18,${TL})`,border:`1.5px solid ${TEAL}40`,marginBottom:0}},
         h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}},
           h('div',null,
-            h('div',{style:{fontSize:15,fontWeight:700,color:TD}},tr('👥 Team A Dashboard','👥 Team A Dashboard')),
-            h('div',{style:{fontSize:11,color:'var(--color-text-secondary)',marginTop:2}},CUR_WEEK+' · '+today.toLocaleDateString())
+            h('div',{style:{fontSize:15,fontWeight:700,color:TD}},tr('🎯 团队Coaching看板','🎯 Team Coaching Dashboard')),
+            h('div',{style:{fontSize:11,color:'var(--color-text-secondary)',marginTop:2}},(user&&user.branch||'')+' · '+CUR_WEEK+' · '+today.toLocaleDateString())
           ),
-          h('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
-            [{v:submitted.length+'/'+teamEmps.length,l:tr('本周提交','Submitted'),c:submitted.length===teamEmps.length?'#16a34a':'#d97706'},
-             {v:coachRate+'%',l:tr('Coaching完成','Coaching Done'),c:coachRate>=80?'#16a34a':coachRate>=50?TEAL:'#d97706'},
-             {v:highRisk.length,l:tr('高风险','High Risk'),c:highRisk.length>0?'#dc2626':'#16a34a'},
-             {v:healthScore,l:tr('团队健康','Health Score'),c:hc},
-            ].map(({v,l,c})=>h('div',{key:l,style:{textAlign:'center',background:'#fff',borderRadius:10,padding:'6px 12px',border:'1px solid var(--color-border)',minWidth:50}},
-              h('div',{style:{fontSize:18,fontWeight:800,color:c}},v),
+          h('div',{style:{display:'flex',gap:6}},
+            [{v:submittedCnt+'/'+branchEmps.length,l:tr('本周提交','Submitted'),c:submittedCnt===branchEmps.length&&branchEmps.length>0?'#16a34a':'#d97706'},
+             {v:doneCnt,l:tr('Coaching完成','Coached'),c:doneCnt===submittedCnt&&submittedCnt>0?'#16a34a':TEAL},
+             {v:pendingCnt,l:tr('待点评','Needs Coaching'),c:pendingCnt>0?'#7c3aed':'#16a34a'},
+            ].map(({v,l,c})=>h('div',{key:l,style:{textAlign:'center',background:'rgba(255,255,255,0.82)',borderRadius:10,padding:'7px 12px',minWidth:54,border:'1px solid var(--color-border)'}},
+              h('div',{style:{fontSize:19,fontWeight:800,color:c}},v),
               h('div',{style:{fontSize:9,color:'var(--color-text-secondary)',marginTop:1}},l)
             ))
           )
         )
       ),
 
-      // ── ① ACTION CENTER ─────────────────────────────────────────────────────
-      h('div',{style:{...S.card,border:`1.5px solid ${TEAL}50`}},
+      // ── Today's priority section ──────────────────────────────────────────
+      priorityList.length>0&&h('div',{style:{...S.card,border:`1.5px solid ${TEAL}50`}},
         h('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:10}},
-          h('div',{style:{width:28,height:28,borderRadius:8,background:TEAL,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:14}},h('i',{className:'ti ti-bolt','aria-hidden':'true'})),
-          h('div',{style:{...S.ttl,margin:0}},tr('⚡ 今日优先处理','⚡ Action Center'))
-        ),
-        topActs.length===0
-          ?h('div',{style:{textAlign:'center',padding:'14px',color:'#16a34a',fontWeight:600,fontSize:13,background:'#f0fdf4',borderRadius:8}},tr('✅ 暂无待处理事项','✅ No action items today'))
-          :h('div',null,
-            topActs.map(({icon,color,msg},i)=>h('div',{key:i,style:{display:'flex',alignItems:'flex-start',gap:10,padding:'9px 10px',borderRadius:8,marginBottom:4,background:i===0?color+'08':'var(--color-background-secondary)',border:`1px solid ${i===0?color+'40':'var(--color-border)'}`}},
-              h('div',{style:{width:22,height:22,borderRadius:6,background:color+'15',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0,fontWeight:700,color:color}},i+1),
-              h('div',{style:{flex:1,fontSize:13,lineHeight:1.5,color:TD}},h('span',{style:{marginRight:5}},icon),msg)
-            ))
-          )
-      ),
-
-      // ── ② SUBMISSION STATUS ─────────────────────────────────────────────────
-      h('div',{style:S.card},
-        h('div',{style:{...S.ttl,marginBottom:10}},tr('📋 本周成长记录提交','📋 Weekly Review Submissions')),
-        missing.length===0
-          ?h('div',{style:{textAlign:'center',padding:'12px',color:'#16a34a',fontWeight:600,fontSize:13,background:'#f0fdf4',borderRadius:8}},tr('🎉 全员已提交本周成长记录！','🎉 Everyone submitted this week!'))
-          :h('div',null,
-            h('div',{style:{marginBottom:8}},
-              h('div',{style:{fontSize:11,fontWeight:700,color:'#dc2626',marginBottom:6}},tr('❌ 未提交 ('+missing.length+')','❌ Not Submitted ('+missing.length+')')),
-              missing.map(({e})=>h('div',{key:e.id,style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 10px',background:'#fef2f2',borderRadius:8,marginBottom:3,border:'1px solid #fecaca'}},
-                h('div',{style:{display:'flex',alignItems:'center',gap:8}},
-                  AV(e.name,30,'#dc2626'),
-                  h('div',null,h('div',{style:{fontSize:13,fontWeight:600}},e.name),h('div',{style:{fontSize:11,color:'var(--color-text-secondary)'}},e.tier))
-                ),
-                daysSinceMon>0&&h('span',{style:{fontSize:11,background:'#dc2626',color:'#fff',padding:'2px 9px',borderRadius:99,fontWeight:600}},tr('延迟','Delayed ')+daysSinceMon+tr('天','d'))
-              ))
-            ),
-            submitted.length>0&&h('div',null,
-              h('div',{style:{fontSize:11,fontWeight:700,color:'#16a34a',marginBottom:5}},tr('✅ 已提交 ('+submitted.length+')','✅ Submitted ('+submitted.length+')')),
-              h('div',{style:{display:'flex',gap:5,flexWrap:'wrap'}},
-                submitted.map(({e})=>h('span',{key:e.id,style:{display:'inline-flex',alignItems:'center',gap:4,fontSize:12,background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:99,padding:'3px 10px',color:'#166534',fontWeight:500}},
-                  AV(e.name,16,'#16a34a'),' '+e.name
-                ))
-              )
-            )
-          )
-      ),
-
-      // ── ③ COACHING COMPLETION ────────────────────────────────────────────────
-      h('div',{style:S.card},
-        h('div',{style:{...S.ttl,marginBottom:10}},tr('💬 本周Coaching完成情况','💬 Coaching Completion This Week')),
-        h('div',{style:{display:'flex',gap:8,marginBottom:10}},
-          [{v:teamEmps.length,l:tr('需辅导','Need Coaching'),c:TEAL},
-           {v:coached.length,l:tr('已完成','Completed'),c:'#16a34a'},
-           {v:coachRate+'%',l:tr('完成率','Completion Rate'),c:coachRate>=80?'#16a34a':coachRate>=50?TEAL:'#d97706'},
-          ].map(({v,l,c})=>h('div',{key:l,style:{flex:1,textAlign:'center',background:'var(--color-background-secondary)',borderRadius:10,padding:'10px 6px',border:`1.5px solid ${c}30`}},
-            h('div',{style:{fontSize:22,fontWeight:800,color:c}},v),
-            h('div',{style:{fontSize:10,color:'var(--color-text-secondary)',marginTop:2}},l)
-          ))
-        ),
-        h('div',{style:{display:'flex',alignItems:'center',gap:8}},
-          PB(coachRate,coachRate>=80?'#16a34a':coachRate>=50?TEAL:'#d97706'),
-          h('span',{style:{fontSize:12,fontWeight:600,color:coachRate>=80?'#16a34a':TEAL,flexShrink:0}},coachRate+'%')
-        ),
-        coached.length>0&&h('div',{style:{marginTop:8,display:'flex',gap:5,flexWrap:'wrap'}},
-          coached.map(e=>h('span',{key:e.id,style:{fontSize:11,background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:99,padding:'2px 8px',color:'#166534'}},
-            '✓ '+e.name
-          ))
-        )
-      ),
-
-      // ── ④ TEAM HEALTH SCORE ──────────────────────────────────────────────────
-      h('div',{style:{...S.card,border:`1.5px solid ${hc}40`,background:hbg}},
-        h('div',{style:{display:'flex',alignItems:'flex-start',gap:12,marginBottom:12}},
-          h('div',{style:{textAlign:'center',minWidth:70}},
-            h('div',{style:{fontSize:42,fontWeight:900,color:hc,lineHeight:1}},healthScore),
-            h('div',{style:{fontSize:11,color:'var(--color-text-secondary)'}}),
-            h('div',{style:{fontSize:14,marginTop:2}},hIcon),
-            h('div',{style:{fontSize:11,fontWeight:700,color:hc}},hLabel)
+          h('div',{style:{width:26,height:26,borderRadius:7,background:TEAL,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:13}},
+            h('i',{className:'ti ti-bolt','aria-hidden':'true'})
           ),
-          h('div',{style:{flex:1}},
-            h('div',{style:{...S.ttl,margin:'0 0 10px 0'}},tr('🏥 团队健康分数','🏥 Team Health Score')),
-            [{l:tr('KPI达标率','KPI Rate'),v:avgKpi,c:kpiColor(avgKpi)},
-             {l:tr('技能水平','Skill Level'),v:avgSk,c:kpiColor(avgSk)},
-             {l:tr('周记录提交','Review Rate'),v:subScore,c:kpiColor(subScore)},
-             {l:tr('Coaching完成','Coaching Rate'),v:coachRate,c:kpiColor(coachRate)},
-            ].map(({l,v,c})=>h('div',{key:l,style:{marginBottom:6}},
-              h('div',{style:{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:2}},
-                h('span',{style:{color:'var(--color-text-secondary)'}},l),
-                h('span',{style:{fontWeight:600,color:c}},v+'%')
-              ),
-              PB(v,c)
-            ))
-          )
-        )
-      ),
-
-      // ── ⑤ COACHING PRIORITY ──────────────────────────────────────────────────
-      h('div',{style:S.card},
-        h('div',{style:{...S.ttl,marginBottom:6}},tr('🚨 辅导优先级','🚨 Coaching Priority')),
-        h('div',{style:{fontSize:11,color:'var(--color-text-secondary)',marginBottom:10,background:'var(--color-background-secondary)',borderRadius:6,padding:'5px 9px'}},tr('自动分析：KPI · 技能 · 出勤 · 成长记录 · 挑战规律','Signals: KPI · Skill · Attendance · Reviews · Challenge patterns')),
-        riskCard(highRisk,'#dc2626','#fef2f2','#fecaca','🔴',tr('高风险','High Risk')),
-        riskCard(medRisk,'#d97706','#fffbeb','#fde68a','🟡',tr('中风险','Medium Risk')),
-        riskCard(lowRisk,'#16a34a','#f0fdf4','#bbf7d0','🟢',tr('低风险','Low Risk')),
-        riskData.length===0&&h('div',{style:{textAlign:'center',padding:'12px',color:'var(--color-text-secondary)',fontSize:13}},tr('暂无员工数据','No employee data yet'))
-      ),
-
-      // ── ⑥ GROWTH LEADERBOARD ─────────────────────────────────────────────────
-      h('div',{style:S.card},
-        h('div',{style:{...S.ttl,marginBottom:6}},tr('🚀 成长排行榜','🚀 Growth Leaderboard')),
-        h('div',{style:{fontSize:11,color:'var(--color-text-secondary)',marginBottom:10,background:'var(--color-background-secondary)',borderRadius:6,padding:'5px 9px'}},tr('综合分 = KPI达标率×50 + 技能分×0.3 + 周记录完整度×20','Score = KPI×50 + Skill×0.3 + Review×20')),
-        growthRank.map(({e,kpiRate,skPct,skDelta,streak,total},i)=>{
-          const isTop=i===0;
-          return h('div',{key:e.id,style:{display:'flex',alignItems:'center',gap:10,padding:'10px',borderRadius:10,marginBottom:5,background:isTop?TEAL+'12':'transparent',border:`1px solid ${isTop?TEAL+'50':'var(--color-border)'}`}},
-            h('div',{style:{fontSize:i<3?18:12,fontWeight:700,color:i<3?RCOLS[i]:'var(--color-text-secondary)',width:24,textAlign:'center',flexShrink:0}},i<3?RMEDS[i]:'#'+(i+1)),
-            AV(e.name,34,isTop?TEAL:undefined),
-            h('div',{style:{flex:1,minWidth:0}},
-              h('div',{style:{display:'flex',alignItems:'center',gap:5,marginBottom:4}},
-                h('span',{style:{fontWeight:600,fontSize:13}},e.name),
-                h('span',{style:{fontSize:10,color:TEAL,background:TEAL+'15',padding:'1px 5px',borderRadius:99}},e.tier)
-              ),
-              h('div',{style:{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}},
-                h('div',{style:{display:'flex',flexDirection:'column',gap:2}},
-                  h('div',{style:{display:'flex',alignItems:'center',gap:4}},
-                    PB(Math.round(kpiRate*100),kpiColor(Math.round(kpiRate*100))),
-                    h('span',{style:{fontSize:10,color:'var(--color-text-secondary)',flexShrink:0}},tr('KPI ','KPI ')+Math.round(kpiRate*100)+'%')
-                  )
-                ),
-                skPct>0&&h('span',{style:{fontSize:11,color:'var(--color-text-secondary)'}},
-                  tr('技','Sk')+' ',h('span',{style:{fontWeight:600}},skPct+'%'),
-                  skDelta!==0&&h('span',{style:{fontSize:10,color:skDelta>0?'#16a34a':'#dc2626',marginLeft:1}},(skDelta>0?'+':'')+skDelta)
-                ),
-                streak>0&&h('span',{style:{fontSize:11,color:'var(--color-text-secondary)'}},tr('📝','📝'),streak,tr('周','wks'))
-              )
+          h('div',{style:{...S.ttl,margin:0}},tr('⚡ 今日优先处理','⚡ Today\'s Priority'))
+        ),
+        priorityList.map((e,i)=>{
+          const{status,sColor}=getS(e);
+          return h('div',{key:e.id,
+            style:{display:'flex',alignItems:'center',gap:10,padding:'9px 10px',borderRadius:8,marginBottom:4,cursor:'pointer',
+              background:i===0?sColor+'08':'var(--color-background-secondary)',
+              border:`1px solid ${i===0?sColor+'50':'var(--color-border)'}`},
+            onClick:()=>setDashSelEmp(dashSelEmp===e.id?null:e.id)},
+            h('div',{style:{width:22,height:22,borderRadius:6,background:sColor+'15',color:sColor,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:12,flexShrink:0}},i+1),
+            h('div',{style:{flex:1,fontSize:13,color:TD,lineHeight:1.4}},
+              h('span',{style:{fontWeight:600}},e.name),
+              ' — ',
+              status==='pending'?tr('已提交成长记录，待 Coaching 点评','Submitted review, awaiting coaching'):tr('未提交本周成长记录','Hasn\'t submitted this week\'s review')
             ),
-            h('div',{style:{textAlign:'center',flexShrink:0,minWidth:38}},
-              h('div',{style:{fontSize:18,fontWeight:800,color:isTop?TEAL:'var(--color-text-secondary)'}},total),
-              h('div',{style:{fontSize:9,color:'var(--color-text-secondary)'}},tr('综合分','Score'))
-            )
+            h('span',{style:{fontSize:11,color:sColor,fontWeight:600,flexShrink:0}},dashSelEmp===e.id?'▲':tr('处理 →','Open →'))
           );
         })
+      ),
+
+      // ── Staff coaching cards ──────────────────────────────────────────────
+      h('div',{style:S.card},
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}},
+          h('div',{style:{...S.ttl,margin:0}},tr('👥 团队成员','👥 Team Members')),
+          h('div',{style:{fontSize:11,color:'var(--color-text-secondary)'}},branchEmps.length+tr(' 人',' members'))
+        ),
+        branchEmps.length===0
+          ?h('div',{style:{textAlign:'center',padding:'24px',color:'var(--color-text-secondary)'}},
+            h('div',{style:{fontSize:28,marginBottom:6}},'👥'),
+            h('div',{style:{fontWeight:600}},tr('本分店暂无团队成员','No team members in this branch')),
+            h('div',{style:{fontSize:11,marginTop:4}},tr('请在设置里确认员工分店分配','Check branch assignment in Settings'))
+          )
+          :h('div',null,sortedEmps.map(e=>coachCard(e)))
       )
     );
   }
@@ -1218,26 +1096,133 @@ h('button',{style:{padding:'4px 10px',borderRadius:99,border:'none',background:'
     return h('div',null,
       profileCard,
       weekForm(emp.id,CUR_WEEK,emp.branch),
-      isAdmin&&h('div',{style:{...S.card,marginTop:0}},
-        h('div',{style:{...S.ttl,marginBottom:10}},tr('团队成长记录','Team Growth Records')),
-        h('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:selGE?12:0}},
-          emps.filter(x=>x.active&&x.tier!=='Owner'&&x.tier!=='Team A'&&x.branch===emp.branch).map(x=>{
-            const cnt=Object.keys(growth).filter(k=>k.startsWith(String(x.id)+'_')).length;
-            return h('div',{key:x.id,style:{display:'flex',alignItems:'center',gap:6,padding:'7px 14px',borderRadius:20,cursor:'pointer',fontSize:13,fontWeight:growthSelEmp===x.id?600:400,background:growthSelEmp===x.id?TEAL:cnt>0?TL:'var(--color-background-secondary)',color:growthSelEmp===x.id?'#fff':TD,border:`1.5px solid ${growthSelEmp===x.id?TEAL:cnt>0?TEAL+'50':'var(--color-border)'}`,transition:'all 0.15s'},onClick:()=>setGrowthSelEmp(growthSelEmp===x.id?null:x.id)},
-              x.name,cnt>0&&h('span',{style:{fontSize:10,background:growthSelEmp===x.id?'rgba(255,255,255,0.3)':TEAL+'20',color:growthSelEmp===x.id?'#fff':TEAL,padding:'1px 6px',borderRadius:99,marginLeft:2}},cnt+tr(' 周',' wks'))
-            );
-          })
-        ),
-        selGE&&h('div',{style:{marginTop:8}},
-          h('div',{style:{display:'flex',alignItems:'center',gap:8,padding:'8px 0',borderTop:'1px solid var(--color-border)',marginBottom:8}},
-            h('div',{style:{width:32,height:32,borderRadius:'50%',background:TEAL,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:13,flexShrink:0}},selGE.name.charAt(0)),
-            h('div',null,h('div',{style:{fontWeight:600,fontSize:14}},selGE.name),h('div',{style:{fontSize:11,color:'var(--color-text-secondary)'}},selGE.tier+' · '+selGE.branch))
+      isAdmin&&(()=>{
+      const branchEmps2=emps.filter(x=>x.active&&x.tier!=='Owner'&&x.tier!=='Team A'&&x.branch===emp.branch);
+      const getStatus=(x)=>{
+        const ck=String(x.id)+'_'+CUR_WEEK;const r=growth[ck]||{};
+        const submitted=!!(r.proudMoment||r.challenge||r.learning||r.breakthrough);
+        const coached=!!(r.coachObs||r.coachIssue||r.coachAdvice||r.coachFollowUp);
+        return{submitted,coached,ck,r};
+      };
+      const submitCnt=branchEmps2.filter(x=>getStatus(x).submitted).length;
+      const coachCnt=branchEmps2.filter(x=>getStatus(x).coached).length;
+      const needsCnt=branchEmps2.filter(x=>{const s=getStatus(x);return s.submitted&&!s.coached;}).length;
+      const filtered=branchEmps2.filter(x=>{
+        const s=getStatus(x);
+        if(growthFilt==='submitted')return s.submitted;
+        if(growthFilt==='pending')return !s.submitted;
+        if(growthFilt==='needs_coach')return s.submitted&&!s.coached;
+        return true;
+      });
+
+      const reviewCard=(x)=>{
+        const isOpen=growthSelEmp===x.id;
+        const{submitted,coached,ck,r}=getStatus(x);
+        const allRecs=empRecs(x.id);
+        const latestRec=allRecs[0];
+        return h('div',{key:x.id,style:{borderBottom:'1px solid var(--color-border)'}},
+          // ── Card header ──────────────────────────────────────────────────
+          h('div',{style:{display:'flex',alignItems:'center',gap:10,padding:'10px 0',cursor:'pointer'},
+            onClick:()=>{setGrowthSelEmp(isOpen?null:x.id);}},
+            h('div',{style:{width:36,height:36,borderRadius:'50%',background:isOpen?TEAL:submitted?'#16a34a':'#d97706',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:14,flexShrink:0}},x.name.charAt(0).toUpperCase()),
+            h('div',{style:{flex:1,minWidth:0}},
+              h('div',{style:{display:'flex',alignItems:'center',gap:6,marginBottom:3}},
+                h('span',{style:{fontWeight:600,fontSize:14,color:TD}},x.name),
+                h('span',{style:{fontSize:10,background:TEAL+'15',color:TEAL,padding:'1px 6px',borderRadius:99,fontWeight:600}},x.tier)
+              ),
+              h('div',{style:{display:'flex',gap:5,flexWrap:'wrap',alignItems:'center'}},
+                submitted
+                  ?h('span',{style:{fontSize:10,color:'#16a34a',background:'#f0fdf4',padding:'2px 7px',borderRadius:99,fontWeight:500}},tr('✅ 本周已提交','✅ Submitted'))
+                  :h('span',{style:{fontSize:10,color:'#d97706',background:'#fffbeb',padding:'2px 7px',borderRadius:99}},tr('⏳ 本周待提交','⏳ Pending')),
+                submitted&&(coached
+                  ?h('span',{style:{fontSize:10,color:'#2563eb',background:'#eff6ff',padding:'2px 7px',borderRadius:99,fontWeight:500}},tr('💬 已Coaching','💬 Coached'))
+                  :h('span',{style:{fontSize:10,color:'#7c3aed',background:'#f5f3ff',padding:'2px 7px',borderRadius:99}},tr('📝 待Coaching','📝 Needs Coaching'))),
+                allRecs.length>0&&h('span',{style:{fontSize:10,color:'var(--color-text-secondary)'}},allRecs.length+tr(' 周记录',' wks'))
+              )
+            ),
+            h('i',{className:'ti ti-chevron-'+(isOpen?'up':'down'),style:{color:'var(--color-text-secondary)',fontSize:13,flexShrink:0}})
           ),
-          coachForm(selGE),
-          growthTimeline(selGE.id)
-        )
-      ),
-      growthTimeline(emp.id),
+          // ── Expanded content ─────────────────────────────────────────────
+          isOpen&&h('div',{style:{paddingBottom:14}},
+            // Latest growth review
+            latestRec
+              ?h('div',{style:{background:TL,borderRadius:8,padding:'10px 12px',marginBottom:10,border:`1px solid ${TEAL}30`}},
+                h('div',{style:{fontSize:11,fontWeight:700,color:TEAL,marginBottom:8}},tr('📋 最新成长记录','📋 Latest Growth Review')+' · '+latestRec.week),
+                latestRec.proudMoment&&h('div',{style:{fontSize:13,marginBottom:4}},h('span',{style:{fontWeight:700}},'⭐ '),latestRec.proudMoment),
+                latestRec.challenge&&h('div',{style:{fontSize:13,marginBottom:4}},h('span',{style:{fontWeight:700}},'⚠️ '),latestRec.challenge),
+                latestRec.learning&&h('div',{style:{fontSize:13,marginBottom:4}},h('span',{style:{fontWeight:700}},'📚 '),latestRec.learning),
+                latestRec.breakthrough&&h('div',{style:{fontSize:13}},h('span',{style:{fontWeight:700}},'🎯 '),latestRec.breakthrough)
+              )
+              :h('div',{style:{textAlign:'center',padding:'12px',color:'var(--color-text-secondary)',fontSize:12,background:'var(--color-background-secondary)',borderRadius:8,marginBottom:10}},
+                tr('员工尚未提交成长记录','No growth reviews submitted yet')
+              ),
+            // Coaching form
+            h('div',{style:{background:'var(--color-background-secondary)',borderRadius:8,padding:'10px 12px',border:`1px solid var(--color-border)`}},
+              h('div',{style:{fontSize:12,fontWeight:700,color:TD,marginBottom:8}},
+                tr('📝 Coaching Notes','📝 Coaching Notes')+' · '+CUR_WEEK),
+              h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}},
+                [['coachObs',tr('👁 观察','👁 Observation')],
+                 ['coachIssue',tr('🔍 问题分析','🔍 Issue Analysis')],
+                 ['coachAdvice',tr('💡 行动建议','💡 Action Advice')],
+                 ['coachFollowUp',tr('📌 下次跟进重点','📌 Follow-up Focus')],
+                ].map(([field,label])=>h('div',{key:field},
+                  h('div',{style:{fontSize:11,fontWeight:600,color:TD,marginBottom:3}},label),
+                  h('textarea',{
+                    style:{width:'100%',padding:'6px 8px',borderRadius:7,border:'1px solid var(--color-border)',fontSize:12,lineHeight:1.5,resize:'vertical',minHeight:52,boxSizing:'border-box',fontFamily:'inherit',background:'var(--color-background)'},
+                    value:r[field]||'',
+                    onChange:ev=>{const v=ev.target.value;setGrowth(g=>({...g,[ck]:{...(g[ck]||{staffId:x.id,branch:x.branch,week:CUR_WEEK,createdAt:new Date().toISOString()}),[field]:v}}));}
+                  })
+                ))
+              ),
+              h('button',{style:{...S.btnP,width:'100%'},
+                onClick:()=>setGrowth(g=>({...g,[ck]:{...(g[ck]||{staffId:x.id,branch:x.branch,week:CUR_WEEK,createdAt:new Date().toISOString()})}}))
+              },tr('💾 保存Coaching点评','💾 Save Coaching Notes'))
+            ),
+            // History (past weeks)
+            allRecs.length>1&&h('div',{style:{marginTop:10}},
+              h('div',{style:{fontSize:11,fontWeight:600,color:'var(--color-text-secondary)',marginBottom:6}},tr('📅 历史记录','📅 Past Reviews')+' ('+(allRecs.length-1)+tr(' 条 )',')')),
+              allRecs.slice(1,4).map(rec=>h('div',{key:rec.week,style:{borderLeft:`2px solid ${TEAL}50`,paddingLeft:10,marginBottom:10}},
+                h('div',{style:{fontSize:11,fontWeight:700,color:TEAL,marginBottom:4}},rec.week),
+                rec.proudMoment&&h('div',{style:{fontSize:12,marginBottom:2}},h('span',{style:{fontWeight:600}},'⭐ '),rec.proudMoment),
+                rec.challenge&&h('div',{style:{fontSize:12,marginBottom:2}},h('span',{style:{fontWeight:600}},'⚠️ '),rec.challenge),
+                rec.learning&&h('div',{style:{fontSize:12,marginBottom:2}},h('span',{style:{fontWeight:600}},'📚 '),rec.learning),
+                rec.breakthrough&&h('div',{style:{fontSize:12}},h('span',{style:{fontWeight:600}},'🎯 '),rec.breakthrough),
+                (rec.coachObs||rec.coachAdvice)&&h('div',{style:{marginTop:6,background:TL,borderRadius:6,padding:'6px 8px'}},
+                  h('div',{style:{fontSize:10,fontWeight:700,color:TEAL,marginBottom:3}},tr('Team A 点评','Team A Coaching')),
+                  rec.coachObs&&h('div',{style:{fontSize:11,marginBottom:1}},h('span',{style:{fontWeight:600}},tr('观察：','Obs: ')),rec.coachObs),
+                  rec.coachAdvice&&h('div',{style:{fontSize:11}},h('span',{style:{fontWeight:600}},tr('建议：','Advice: ')),rec.coachAdvice)
+                )
+              ))
+            )
+          )
+        );
+      };
+
+      return h('div',{style:{...S.card,marginTop:0}},
+        // Header + stats
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}},
+          h('div',{style:{...S.ttl,margin:0}},tr('👥 分店成长记录','👥 Branch Growth Reviews'),' · '+emp.branch),
+          h('div',{style:{fontSize:11,color:'var(--color-text-secondary)'}},branchEmps2.length+tr(' 名成员',' members'))
+        ),
+        // Summary badges
+        h('div',{style:{display:'flex',gap:6,marginBottom:12}},
+          [{v:submitCnt+'/'+branchEmps2.length,l:tr('本周提交','Submitted'),c:'#16a34a',k:'submitted'},
+           {v:branchEmps2.length-submitCnt,l:tr('待提交','Pending'),c:'#d97706',k:'pending'},
+           {v:needsCnt,l:tr('待Coaching','Needs Coaching'),c:'#7c3aed',k:'needs_coach'},
+           {v:coachCnt,l:tr('已Coaching','Coached'),c:'#2563eb',k:'all'},
+          ].map(({v,l,c,k})=>h('div',{key:k,style:{flex:1,textAlign:'center',background:growthFilt===k?c:'var(--color-background-secondary)',borderRadius:8,padding:'7px 4px',cursor:'pointer',border:`1px solid ${growthFilt===k?c:'var(--color-border)'}`},
+            onClick:()=>setGrowthFilt(growthFilt===k?'all':k)},
+            h('div',{style:{fontSize:17,fontWeight:800,color:growthFilt===k?'#fff':c}},v),
+            h('div',{style:{fontSize:9,color:growthFilt===k?'rgba(255,255,255,0.85)':'var(--color-text-secondary)',marginTop:1}},l)
+          ))
+        ),
+        // Review list
+        filtered.length===0
+          ?h('div',{style:{textAlign:'center',padding:'20px',color:'var(--color-text-secondary)',fontSize:13}},tr('暂无符合条件的记录','No records matching this filter'))
+          :h('div',null,filtered.map(x=>reviewCard(x)))
+      );
+    })(),
+            growthTimeline(emp.id),
       renderGrowthSkill(emp)
     );
   }
